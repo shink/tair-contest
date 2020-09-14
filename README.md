@@ -1,6 +1,4 @@
-# tair-contest
-
-天池第二届数据库大赛—Tair性能挑战
+# 第二届数据库大赛—Tair性能挑战
 
 ## Team
 
@@ -12,6 +10,6 @@
 
     - Tsund
 
-## LICENSE
+## License
 
 [Apache License 2.0](LICENSE)

@@ -88,9 +88,8 @@ Status NvmEngine::Get(const Slice &key, std::string *value) {
     }
 
     //  顺序探测
-    uint64_t start = index;
-    uint64_t end = index + count;
-    for (uint64_t i = start; i <= end; ++i) {
+    uint64_t i = index;
+    for (uint16_t j = 0; j <= count; ++j) {
         if (!bit_set_.test(i)) {
             return NotFound;
         }
@@ -98,6 +97,10 @@ Status NvmEngine::Get(const Slice &key, std::string *value) {
         if (memcmp(pmem_base_ + i * PAIR_SIZE, key.data(), KEY_SIZE) == 0) {
             value->assign(pmem_base_ + i * PAIR_SIZE + KEY_SIZE, VALUE_SIZE);
             return Ok;
+        }
+
+        if (++i == MOD_NUM) {
+            i = 0ull;
         }
     }
 
@@ -145,7 +148,9 @@ Status NvmEngine::Set(const Slice &key, const Slice &value) {
             return Ok;
         }
 
-        i = (i + 1) % MOD_NUM;
+        if (++i == MOD_NUM) {
+            i = 0ull;
+        }
     }
 }
 
