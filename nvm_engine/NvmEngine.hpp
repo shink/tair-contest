@@ -24,7 +24,7 @@ const uint16_t PAIR_SIZE = KEY_SIZE + VALUE_SIZE;
 const uint64_t PAIR_NUM = MAP_SIZE / PAIR_SIZE;  //  键值对数量（805306368，不是素数）
 //const uint64_t MOD_NUM = 805306457u; //  在 805306368 周围的两个素数分别是 805306357 和 805306457
 const uint64_t MOD_NUM = PAIR_NUM;
-const uint16_t CONFLICT_THRESHOLD = 1 << 13; //  冲突阈值 （8192）
+const uint16_t CONFLICT_THRESHOLD = 1 << 12; //  冲突阈值 （4096）
 
 
 class NvmEngine : DB {
@@ -57,6 +57,7 @@ private:
 #endif
     std::hash<std::string> str_hash_;
     std::bitset<MOD_NUM> bit_set_;
+    std::mutex mut_;
     std::unordered_map<std::string, std::string> hash_map_;
     uint16_t conflict_count_[MOD_NUM];
     uint64_t get_count_;

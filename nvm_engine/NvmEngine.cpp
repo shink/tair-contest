@@ -12,8 +12,13 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <bitset>
+#include <mutex>
 #include <unordered_map>
 #include "NvmEngine.hpp"
+
+#define LIKELY(x) (__builtin_expect((x), 1))
+#define UNLIKELY(x) (__builtin_expect((x), 0))
+
 
 //  <-------- DB -------->
 
@@ -41,7 +46,8 @@ Status NvmEngine::CreateOrOpen(const std::string &name, DB **dbptr, FILE *log_fi
 
 void NvmEngine::BuildMapping(const std::string &name, size_t size) {
 #ifdef USE_LIBPMEM
-    if ((pmem_base_ = (char *) pmem_map_file(name.c_str(), size, PMEM_FILE_CREATE, 0666, &mapped_size_, &is_pmem_)) == NULL) {
+    if ((pmem_base_ = (char *) pmem_map_file(name.c_str(), size, PMEM_FILE_CREATE, 0666, &mapped_size_, &is_pmem_)) ==
+        NULL) {
         perror("[NvmEngine::BuildMapping] pmem map file failed");
         exit(1);
     } else {
@@ -114,9 +120,10 @@ Status NvmEngine::Set(const Slice &key, const Slice &value) {
 
     //  若该处冲突次数已经大于阈值，并且 hash_map_ 中存在，则快速更新 hash_map_
     uint64_t index = Hash(key.to_string());
-    if (conflict_count_[index] >= CONFLICT_THRESHOLD) {
+    if (conflict_count_[index] == CONFLICT_THRESHOLD) {
         auto kv = hash_map_.find(key.to_string());
         if (kv != hash_map_.end()) {
+            std::lock_guard<std::mutex> lock(mut_);
             hash_map_[key.to_string()] = value.to_string();
             return Ok;
         }
@@ -128,6 +135,7 @@ Status NvmEngine::Set(const Slice &key, const Slice &value) {
 
     while (true) {
         if (!bit_set_.test(i)) {
+            std::lock_guard<std::mutex> lock(mut_);
             bit_set_.set(i);
             conflict_count_[index] = std::max(conflict_count_[index], count);
             memcpy(pmem_base_ + i * PAIR_SIZE, key.data(), KEY_SIZE);
@@ -135,6 +143,7 @@ Status NvmEngine::Set(const Slice &key, const Slice &value) {
             return Ok;
         }
         if (memcmp(pmem_base_ + i * PAIR_SIZE, key.data(), KEY_SIZE) == 0) {
+            std::lock_guard<std::mutex> lock(mut_);
             conflict_count_[index] = std::max(conflict_count_[index], count);
             memcpy(pmem_base_ + i * PAIR_SIZE + KEY_SIZE, value.data(), VALUE_SIZE);
             return Ok;
@@ -142,6 +151,7 @@ Status NvmEngine::Set(const Slice &key, const Slice &value) {
         ++count;
 
         if (count == CONFLICT_THRESHOLD) {
+            std::lock_guard<std::mutex> lock(mut_);
             conflict_count_[index] = CONFLICT_THRESHOLD;
             hash_map_[key.to_string()] = value.to_string();
             return Ok;
