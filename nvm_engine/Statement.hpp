@@ -11,6 +11,14 @@
 //#define CLION   //  Windows Clion CMake 本地调试
 //#define LOCAL   //  Centos 本地调试
 
+#ifndef USE_LIBPMEM
+#define USE_LIBPMEM
+#endif
+
+#ifdef USE_LIBPMEM
+#include <libpmem.h>
+#endif
+
 #ifndef LOCAL
 #define PrintLog(...)                                 \
     if (log_file_) {                                  \

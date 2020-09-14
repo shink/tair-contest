@@ -7,11 +7,11 @@ get_per_thread=$3
 
 
 g++ -pthread -o judge judge.cpp random.cpp\
-	-L $LIB_PATH -l engine \
+	-L $LIB_PATH -lengine -lpmem\
 	-I $INCLUDE_DIR \
-    -g \
-    -mavx2 \
-    -std=c++11
+  -g \
+  -mavx2 \
+  -std=c++11
 
 if [ $? -ne 0 ]; then
     echo "Compile Error"

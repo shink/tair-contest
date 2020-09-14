@@ -52,6 +52,9 @@ private:
 private:
     char *pmem_base_;
     size_t mapped_size_;
+#ifdef USE_LIBPMEM
+    int is_pmem_;
+#endif
     std::hash<std::string> str_hash_;
     std::bitset<MOD_NUM> bit_set_;
     std::unordered_map<std::string, std::string> hash_map_;

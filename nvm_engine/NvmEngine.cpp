@@ -41,12 +41,11 @@ Status NvmEngine::CreateOrOpen(const std::string &name, DB **dbptr, FILE *log_fi
 
 void NvmEngine::BuildMapping(const std::string &name, size_t size) {
 #ifdef USE_LIBPMEM
-    if ((_pmem.pmem_base = (char*)pmem_map_file(file_name, size,
-                                                PMEM_FILE_CREATE,
-                                                0666, &_mapped_len,
-                                                &_is_pmem)) == NULL) {
-        perror("Pmem map file failed");
+    if ((pmem_base_ = (char *) pmem_map_file(name.c_str(), size, PMEM_FILE_CREATE, 0666, &mapped_size_, &is_pmem_)) == NULL) {
+        perror("[NvmEngine::BuildMapping] pmem map file failed");
         exit(1);
+    } else {
+        PrintLog("[NvmEngine::BuildMapping] pmem map file successed\n");
     }
 #else
     int fd = open(name.c_str(), O_RDWR | O_CREAT, 00777);
@@ -157,7 +156,7 @@ Status NvmEngine::Set(const Slice &key, const Slice &value) {
 
 NvmEngine::~NvmEngine() {
 #ifdef USE_LIBPMEM
-    pmem_unmap(_pmem.pmem_base, _mapped_len);
+    pmem_unmap(pmem_base_, mapped_size_);
 #else
     munmap(pmem_base_, mapped_size_);
 #endif
