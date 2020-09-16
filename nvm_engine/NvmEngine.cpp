@@ -148,9 +148,8 @@ Status NvmEngine::Set(const Slice &key, const Slice &value) {
             memcpy(pmem_base_ + i * PAIR_SIZE + KEY_SIZE, value.data(), VALUE_SIZE);
             return Ok;
         }
-        ++count;
 
-        if (count == CONFLICT_THRESHOLD) {
+        if (++count == CONFLICT_THRESHOLD) {
             std::lock_guard<std::mutex> lock(mut_);
             conflict_count_[index] = CONFLICT_THRESHOLD;
             hash_map_[key.to_string()] = value.to_string();

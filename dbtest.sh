@@ -7,16 +7,18 @@ magenta='\e[95m'
 cyan='\e[96m'
 none='\e[0m'
 
+path=/root/tair-contest
+
 set_per_thread=$1
 get_per_thread=$2
 
-[ -z $set_per_thread ] && set_per_thread=10000
-[ -z $get_per_thread ] && get_per_thread=10000
+[ -z $set_per_thread ] && set_per_thread=100000
+[ -z $get_per_thread ] && get_per_thread=100000
 
 echo -e "set_per_thread is ${yellow}$set_per_thread${none}"
 echo -e "get_per_thread is ${yellow}$get_per_thread${none}"
 
-cd /root/tair-contest
+cd $path
 
 make
 
