@@ -97,36 +97,27 @@ Status NvmEngine::Get(const Slice &key, std::string *value) {
     }
 
     uint16_t index = Hash(key.to_string());
-    auto kv = fast_map_[index].find(key.to_string());
-    if (kv != fast_map_[index].end()) {
-        *value = kv->second;
-        return Ok;
+
+    //  若桶已满，则先查找 fast_map_
+    if (buckets_[index].end_off == BUCKET_SIZE) {
+        auto kv = fast_map_[index].find(key.to_string());
+        if (kv != fast_map_[index].end()) {
+            *value = kv->second;
+            return Ok;
+        }
     }
 
-    uint16_t cur = index;
-    uint8_t count = 0;
-    uint64_t end;
-    char *p, *q;
+    //  从 aep 中查找
+    char *p = buckets_[index].ptr;
+    uint64_t right = buckets_[index].end_off;
+    uint64_t left = 0;
 
-    while (count < MAX_CONFLICT_NUM) {
-        end = buckets_[cur].end_off;
-        p = buckets_[cur].ptr;
-        q = p + end;
-
-        while (p < q) {
-            if (memcmp(p, key.data(), KEY_SIZE) == 0) {
-                value->assign(p + KEY_SIZE, VALUE_SIZE);
-                return Ok;
-            }
-            p += PAIR_SIZE;
+    while (left < right) {
+        if (memcmp(p + left, key.data(), KEY_SIZE) == 0) {
+            value->assign(p + left + KEY_SIZE, VALUE_SIZE);
+            return Ok;
         }
-
-        if (end < BUCKET_SIZE) {
-            return NotFound;
-        }
-
-        cur = (cur + 1) % BUCKET_NUM;
-        ++count;
+        left += PAIR_SIZE;
     }
 
     return NotFound;
@@ -140,60 +131,27 @@ Status NvmEngine::Set(const Slice &key, const Slice &value) {
 
     uint16_t index = Hash(key.to_string());
 
-    //  先看 fast_map_ 是否有空间或已有记录
-    if (fast_map_[index].size() <= MIN_MAP_SIZE) {
-        std::lock_guard<std::mutex> lock(mut_[index]);
-        fast_map_[index][key.to_string()] = value.to_string();
-        return Ok;
-    }
+    char *p = buckets_[index].ptr;
+    uint64_t right = buckets_[index].end_off;
+    uint64_t left = 0;
 
-    uint16_t cur = index;
-    uint8_t count = 0;
-//    uint64_t end;
-//    char *p, *q;
-
-    while (count < MAX_CONFLICT_NUM) {
-        if (buckets_[cur].end_off == BUCKET_SIZE) {
-            //  该桶已满
-            cur = (cur + 1) % BUCKET_NUM;
-            ++count;
-        } else {
-            //  该桶未满
-            std::lock_guard<std::mutex> lock(mut_[cur]);
-            Append(key, value, cur);
-            break;
+    while (left < right) {
+        if (memcmp(p + left, key.data(), KEY_SIZE) == 0) {
+            memcpy(p + left + KEY_SIZE, value.data(), VALUE_SIZE);
+            return Ok;
         }
+        left += PAIR_SIZE;
     }
 
-//    while (count < MAX_CONFLICT_NUM) {
-//        end = buckets_[cur].end_off;
-//        p = buckets_[cur].ptr;
-//        q = p + end;
-//
-//        while (p < q) {
-//            if (memcmp(p, key.data(), KEY_SIZE) == 0) {
-//                memcpy(p + KEY_SIZE, value.data(), VALUE_SIZE);
-//                return Ok;
-//            }
-//            p += PAIR_SIZE;
-//        }
-//
-//        if (end == BUCKET_SIZE) {
-//            //  该桶已满
-//            cur = (cur + 1) % BUCKET_NUM;
-//            ++count;
-//        } else {
-//            //  该桶未满
-//            std::lock_guard<std::mutex> lock(mut_[cur]);
-//            Append(key, value, cur);
-//            break;
-//        }
-//    }
-
-    //  5 个桶均已满，存入 fast_map_
-    if (count == MAX_CONFLICT_NUM) {
+    //  如果桶已满，则直接放 fast_map_
+    if (right == BUCKET_SIZE) {
         std::lock_guard<std::mutex> lock(mut_[index]);
         fast_map_[index][key.to_string()] = value.to_string();
+    } else {
+        memcpy(p + right, key.data(), KEY_SIZE);
+        memcpy(p + right + KEY_SIZE, value.data(), VALUE_SIZE);
+        std::lock_guard<std::mutex> lock(mut_[index]);
+        buckets_[index].end_off += PAIR_SIZE;
     }
 
     return Ok;

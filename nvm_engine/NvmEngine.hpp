@@ -14,7 +14,6 @@
 struct bucket {
     char *ptr;
     uint64_t end_off;
-    uint64_t next_loc;
 };
 
 
@@ -64,10 +63,8 @@ private:
     const static uint64_t VALUE_SIZE = 80;
     const static uint64_t PAIR_SIZE = KEY_SIZE + VALUE_SIZE;
     const static uint64_t PAIR_NUM = MAP_SIZE / PAIR_SIZE;  //  键值对数量（805306368，不是素数，805306457是素数）
-    const static uint16_t BUCKET_NUM = 1ull << 10ull;    //  1024 个桶
+    const static uint16_t BUCKET_NUM = 4ull << 10ull;    //  1024 个桶
     const static uint64_t BUCKET_SIZE = MAP_SIZE / BUCKET_NUM; //  72M（75497472）
-    const static uint16_t MIN_MAP_SIZE = 2u << 10u; //  每个 fast_map 至少存 2048 条 kv 对
-    const static uint8_t MAX_CONFLICT_NUM = 5; //  每次搜索最多试探 5 个桶
 
     std::hash<std::string> str_hash_;
     std::mutex mut_[BUCKET_NUM];
