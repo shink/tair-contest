@@ -105,11 +105,14 @@ Status NvmEngine::Get(const Slice &key, std::string *value) {
 
     uint16_t cur = index;
     uint8_t count = 0;
-    uint64_t end = buckets_[cur].end_off;
-    char *p = buckets_[cur].ptr;
-    char *q = p + end;
+    uint64_t end;
+    char *p, *q;
 
     while (count < MAX_CONFLICT_NUM) {
+        end = buckets_[cur].end_off;
+        p = buckets_[cur].ptr;
+        q = p + end;
+
         while (p < q) {
             if (memcmp(p, key.data(), KEY_SIZE) == 0) {
                 value->assign(p + KEY_SIZE, VALUE_SIZE);
@@ -146,8 +149,11 @@ Status NvmEngine::Set(const Slice &key, const Slice &value) {
 
     uint16_t cur = index;
     uint8_t count = 0;
+//    uint64_t end;
+//    char *p, *q;
+
     while (count < MAX_CONFLICT_NUM) {
-        if (buckets_[index].end_off == BUCKET_SIZE) {
+        if (buckets_[cur].end_off == BUCKET_SIZE) {
             //  该桶已满
             cur = (cur + 1) % BUCKET_NUM;
             ++count;
@@ -159,8 +165,33 @@ Status NvmEngine::Set(const Slice &key, const Slice &value) {
         }
     }
 
+//    while (count < MAX_CONFLICT_NUM) {
+//        end = buckets_[cur].end_off;
+//        p = buckets_[cur].ptr;
+//        q = p + end;
+//
+//        while (p < q) {
+//            if (memcmp(p, key.data(), KEY_SIZE) == 0) {
+//                memcpy(p + KEY_SIZE, value.data(), VALUE_SIZE);
+//                return Ok;
+//            }
+//            p += PAIR_SIZE;
+//        }
+//
+//        if (end == BUCKET_SIZE) {
+//            //  该桶已满
+//            cur = (cur + 1) % BUCKET_NUM;
+//            ++count;
+//        } else {
+//            //  该桶未满
+//            std::lock_guard<std::mutex> lock(mut_[cur]);
+//            Append(key, value, cur);
+//            break;
+//        }
+//    }
+
     //  5 个桶均已满，存入 fast_map_
-    if (count == MAX_CONFLICT_NUM && buckets_[cur].end_off == BUCKET_SIZE) {
+    if (count == MAX_CONFLICT_NUM) {
         std::lock_guard<std::mutex> lock(mut_[index]);
         fast_map_[index][key.to_string()] = value.to_string();
     }
@@ -178,4 +209,3 @@ NvmEngine::~NvmEngine() {
 
     fclose(log_file_);
 }
-

@@ -14,7 +14,7 @@ using namespace std;
 static const int KEY_SIZE = 16;
 static const int VALUE_SIZE = 80;
 
-static const int NUM_THREADS = 8;          /* 8T */
+static const int NUM_THREADS = 16;          /* 16T */
 static int PER_SET = 48000000;
 static int PER_GET = 48000000;
 static const uint64_t BASE = 199997;
