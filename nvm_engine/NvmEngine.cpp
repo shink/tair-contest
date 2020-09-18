@@ -11,7 +11,6 @@
 #include <sys/types.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <bitset>
 #include <mutex>
 #include <unordered_map>
 #include "NvmEngine.hpp"
@@ -32,8 +31,8 @@ DB::~DB() {}
 //  <-------- NvmEngine -------->
 
 NvmEngine::NvmEngine(const std::string &name, FILE *log_file) : get_count_(0), set_count_(0), log_file_(log_file) {
-    memset(conflict_count_, 0, sizeof(uint16_t) * MOD_NUM);
     BuildMapping(name, MAP_SIZE);
+    InitBucket();
 }
 
 
@@ -70,8 +69,25 @@ void NvmEngine::BuildMapping(const std::string &name, size_t size) {
 }
 
 
-inline uint64_t NvmEngine::Hash(const std::string &key) {
-    return str_hash_(key) % MOD_NUM;
+void NvmEngine::InitBucket() {
+    uint64_t delta = 0;
+    for (auto &bucket : buckets_) {
+        bucket.ptr = pmem_base_ + delta;
+        delta += BUCKET_NUM;
+    }
+}
+
+
+inline uint16_t NvmEngine::Hash(const std::string &key) {
+    return str_hash_(key) % BUCKET_NUM;
+}
+
+
+inline void NvmEngine::Append(const Slice &key, const Slice &value, uint16_t index) {
+    char *p = buckets_[index].ptr + buckets_[index].end_off;
+    memcpy(p, key.data(), KEY_SIZE);
+    memcpy(p + KEY_SIZE, value.data(), VALUE_SIZE);
+    buckets_[index].end_off += PAIR_SIZE;
 }
 
 
@@ -80,33 +96,34 @@ Status NvmEngine::Get(const Slice &key, std::string *value) {
         PrintLog("[NvmEngine::Get] get count: %u\n", get_count_);
     }
 
-    uint64_t index = Hash(key.to_string());
-    uint16_t count = conflict_count_[index];
-
-    //  若 hash_map_ 中存在 key，则快速读取 hash_map_
-    if (count == CONFLICT_THRESHOLD) {
-        auto kv = hash_map_.find(key.to_string());
-        if (kv != hash_map_.end()) {
-            *value = kv->second;
-            return Ok;
-        }
+    uint16_t index = Hash(key.to_string());
+    auto kv = fast_map_[index].find(key.to_string());
+    if (kv != fast_map_[index].end()) {
+        *value = kv->second;
+        return Ok;
     }
 
-    //  顺序探测
-    uint64_t i = index;
-    for (uint16_t j = 0; j <= count; ++j) {
-        if (!bit_set_.test(i)) {
+    uint16_t cur = index;
+    uint8_t count = 0;
+    uint64_t end = buckets_[cur].end_off;
+    char *p = buckets_[cur].ptr;
+    char *q = p + end;
+
+    while (count < MAX_CONFLICT_NUM) {
+        while (p < q) {
+            if (memcmp(p, key.data(), KEY_SIZE) == 0) {
+                value->assign(p + KEY_SIZE, VALUE_SIZE);
+                return Ok;
+            }
+            p += PAIR_SIZE;
+        }
+
+        if (end < BUCKET_SIZE) {
             return NotFound;
         }
 
-        if (memcmp(pmem_base_ + i * PAIR_SIZE, key.data(), KEY_SIZE) == 0) {
-            value->assign(pmem_base_ + i * PAIR_SIZE + KEY_SIZE, VALUE_SIZE);
-            return Ok;
-        }
-
-        if (++i == MOD_NUM) {
-            i = 0ull;
-        }
+        cur = (cur + 1) % BUCKET_NUM;
+        ++count;
     }
 
     return NotFound;
@@ -118,48 +135,37 @@ Status NvmEngine::Set(const Slice &key, const Slice &value) {
         PrintLog("[NvmEngine::Set] set count: %u\n", set_count_);
     }
 
-    //  若该处冲突次数已经大于阈值，并且 hash_map_ 中存在，则快速更新 hash_map_
-    uint64_t index = Hash(key.to_string());
-    if (conflict_count_[index] == CONFLICT_THRESHOLD) {
-        auto kv = hash_map_.find(key.to_string());
-        if (kv != hash_map_.end()) {
-            std::lock_guard<std::mutex> lock(mut_);
-            hash_map_[key.to_string()] = value.to_string();
-            return Ok;
+    uint16_t index = Hash(key.to_string());
+
+    //  先看 fast_map_ 是否有空间或已有记录
+    if (fast_map_[index].size() <= MIN_MAP_SIZE) {
+        std::lock_guard<std::mutex> lock(mut_[index]);
+        fast_map_[index][key.to_string()] = value.to_string();
+        return Ok;
+    }
+
+    uint16_t cur = index;
+    uint8_t count = 0;
+    while (count < MAX_CONFLICT_NUM) {
+        if (buckets_[index].end_off == BUCKET_SIZE) {
+            //  该桶已满
+            cur = (cur + 1) % BUCKET_NUM;
+            ++count;
+        } else {
+            //  该桶未满
+            std::lock_guard<std::mutex> lock(mut_[cur]);
+            Append(key, value, cur);
+            break;
         }
     }
 
-    //  根据冲突次数判断，若冲突次数大于阈值，则写入 hash_map_，若小于阈值，则写入 AEP
-    uint64_t i = index;
-    uint16_t count = 0;
-
-    while (true) {
-        if (!bit_set_.test(i)) {
-            std::lock_guard<std::mutex> lock(mut_);
-            bit_set_.set(i);
-            conflict_count_[index] = std::max(conflict_count_[index], count);
-            memcpy(pmem_base_ + i * PAIR_SIZE, key.data(), KEY_SIZE);
-            memcpy(pmem_base_ + i * PAIR_SIZE + KEY_SIZE, value.data(), VALUE_SIZE);
-            return Ok;
-        }
-        if (memcmp(pmem_base_ + i * PAIR_SIZE, key.data(), KEY_SIZE) == 0) {
-            std::lock_guard<std::mutex> lock(mut_);
-            conflict_count_[index] = std::max(conflict_count_[index], count);
-            memcpy(pmem_base_ + i * PAIR_SIZE + KEY_SIZE, value.data(), VALUE_SIZE);
-            return Ok;
-        }
-
-        if (++count == CONFLICT_THRESHOLD) {
-            std::lock_guard<std::mutex> lock(mut_);
-            conflict_count_[index] = CONFLICT_THRESHOLD;
-            hash_map_[key.to_string()] = value.to_string();
-            return Ok;
-        }
-
-        if (++i == MOD_NUM) {
-            i = 0ull;
-        }
+    //  5 个桶均已满，存入 fast_map_
+    if (count == MAX_CONFLICT_NUM && buckets_[cur].end_off == BUCKET_SIZE) {
+        std::lock_guard<std::mutex> lock(mut_[index]);
+        fast_map_[index][key.to_string()] = value.to_string();
     }
+
+    return Ok;
 }
 
 
@@ -172,3 +178,4 @@ NvmEngine::~NvmEngine() {
 
     fclose(log_file_);
 }
+

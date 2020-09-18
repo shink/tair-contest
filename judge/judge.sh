@@ -15,7 +15,7 @@ g++ -pthread -o judge judge.cpp random.cpp\
 
 if [ $? -ne 0 ]; then
     echo "Compile Error"
-    exit 7 
+    exit 7
 fi
 
 # rm -f /mnt/pmem/DB

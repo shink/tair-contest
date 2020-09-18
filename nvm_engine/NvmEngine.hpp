@@ -10,21 +10,12 @@
 
 #include "Statement.hpp"
 
-#ifndef LOCAL
-const size_t MAP_SIZE = 72ull << 30ull;  //  72G（77309411328）
-const uint64_t DISPLAY_NUM = 100000000;  //  1亿
-#else
-const size_t MAP_SIZE = 960ull << 20ull;  //  960M
-const uint64_t DISPLAY_NUM = 10000;
-#endif
 
-const uint16_t KEY_SIZE = 16;
-const uint16_t VALUE_SIZE = 80;
-const uint16_t PAIR_SIZE = KEY_SIZE + VALUE_SIZE;
-const uint64_t PAIR_NUM = MAP_SIZE / PAIR_SIZE;  //  键值对数量（805306368，不是素数）
-//const uint64_t MOD_NUM = 805306457u; //  在 805306368 周围的两个素数分别是 805306357 和 805306457
-const uint64_t MOD_NUM = PAIR_NUM;
-const uint16_t CONFLICT_THRESHOLD = 1 << 12; //  冲突阈值 （4096）
+struct bucket {
+    char *ptr;
+    uint64_t end_off;
+    uint64_t next_loc;
+};
 
 
 class NvmEngine : DB {
@@ -45,21 +36,43 @@ public:
     ~NvmEngine() override;
 
 private:
-    void BuildMapping(const std::string &name, size_t size);
+    inline void BuildMapping(const std::string &name, size_t size);
 
-    inline uint64_t Hash(const std::string &key);
+    inline void InitBucket();
+
+    inline uint16_t Hash(const std::string &key);
+
+    inline void Append(const Slice &key, const Slice &value, uint16_t index);
 
 private:
     char *pmem_base_;
     size_t mapped_size_;
+
 #ifdef USE_LIBPMEM
     int is_pmem_;
 #endif
+
+#ifndef LOCAL
+    const static size_t MAP_SIZE = 72ull << 30ull;  //  72G（77309411328）
+    const static uint64_t DISPLAY_NUM = 100000000;  //  1亿
+#else
+    const static size_t MAP_SIZE = 960ull << 20ull;  //  960M
+    const static uint64_t DISPLAY_NUM = 100000;
+#endif
+
+    const static uint64_t KEY_SIZE = 16;
+    const static uint64_t VALUE_SIZE = 80;
+    const static uint64_t PAIR_SIZE = KEY_SIZE + VALUE_SIZE;
+    const static uint64_t PAIR_NUM = MAP_SIZE / PAIR_SIZE;  //  键值对数量（805306368，不是素数，805306457是素数）
+    const static uint16_t BUCKET_NUM = 1ull << 10ull;    //  1024 个桶
+    const static uint64_t BUCKET_SIZE = MAP_SIZE / BUCKET_NUM; //  72M（75497472）
+    const static uint16_t MIN_MAP_SIZE = 2u << 10u; //  每个 fast_map 至少存 2048 条 kv 对
+    const static uint8_t MAX_CONFLICT_NUM = 5; //  每次搜索最多试探 5 个桶
+
     std::hash<std::string> str_hash_;
-    std::bitset<MOD_NUM> bit_set_;
-    std::mutex mut_;
-    std::unordered_map<std::string, std::string> hash_map_;
-    uint16_t conflict_count_[MOD_NUM];
+    std::mutex mut_[BUCKET_NUM];
+    std::unordered_map<std::string, std::string> fast_map_[BUCKET_NUM];
+    bucket buckets_[BUCKET_NUM];
     uint64_t get_count_;
     uint64_t set_count_;
     FILE *log_file_;
