@@ -79,20 +79,13 @@ void NvmEngine::InitBucket() {
 
 
 inline uint16_t NvmEngine::Hash(const std::string &key) {
-    return str_hash_(key) % BUCKET_NUM;
-}
-
-
-inline void NvmEngine::Append(const Slice &key, const Slice &value, uint16_t index) {
-    char *p = buckets_[index].ptr + buckets_[index].end_off;
-    memcpy(p, key.data(), KEY_SIZE);
-    memcpy(p + KEY_SIZE, value.data(), VALUE_SIZE);
-    buckets_[index].end_off += PAIR_SIZE;
+    return str_hash_(key) & (BUCKET_NUM - 1);
 }
 
 
 Status NvmEngine::Get(const Slice &key, std::string *value) {
     if (++get_count_ % DISPLAY_NUM == 0) {
+        std::lock_guard<std::mutex> lock(log_mut_);
         PrintLog("[NvmEngine::Get] get count: %u\n", get_count_);
     }
 
@@ -126,6 +119,7 @@ Status NvmEngine::Get(const Slice &key, std::string *value) {
 
 Status NvmEngine::Set(const Slice &key, const Slice &value) {
     if (++set_count_ % DISPLAY_NUM == 0) {
+        std::lock_guard<std::mutex> lock(log_mut_);
         PrintLog("[NvmEngine::Set] set count: %u\n", set_count_);
     }
 
@@ -145,12 +139,12 @@ Status NvmEngine::Set(const Slice &key, const Slice &value) {
 
     //  如果桶已满，则直接放 fast_map_
     if (right == BUCKET_SIZE) {
-        std::lock_guard<std::mutex> lock(mut_[index]);
+//        std::lock_guard<std::mutex> lock(mut_[index]);
         fast_map_[index][key.to_string()] = value.to_string();
     } else {
         memcpy(p + right, key.data(), KEY_SIZE);
         memcpy(p + right + KEY_SIZE, value.data(), VALUE_SIZE);
-        std::lock_guard<std::mutex> lock(mut_[index]);
+//        std::lock_guard<std::mutex> lock(mut_[index]);
         buckets_[index].end_off += PAIR_SIZE;
     }
 

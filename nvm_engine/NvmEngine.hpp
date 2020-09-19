@@ -41,8 +41,6 @@ private:
 
     inline uint16_t Hash(const std::string &key);
 
-    inline void Append(const Slice &key, const Slice &value, uint16_t index);
-
 private:
     char *pmem_base_;
     size_t mapped_size_;
@@ -67,6 +65,7 @@ private:
     const static uint64_t BUCKET_SIZE = MAP_SIZE / BUCKET_NUM; //  72M（75497472）
 
     std::hash<std::string> str_hash_;
+    std::mutex log_mut_;
     std::mutex mut_[BUCKET_NUM];
     std::unordered_map<std::string, std::string> fast_map_[BUCKET_NUM];
     bucket buckets_[BUCKET_NUM];
