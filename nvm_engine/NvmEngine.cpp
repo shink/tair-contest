@@ -113,7 +113,8 @@ Status NvmEngine::Set(const Slice &key, const Slice &value) {
     uint16_t index = Hash(key.to_string());
 
     if (fast_map_[index].size() < FAST_MAP_SIZE) {
-        fast_map_[key.to_string()] = value.to_string();
+        std::lock_guard<std::mutex> lock(mut_[index]);
+        fast_map_[index][key.to_string()] = value.to_string();
         return Ok;
     }
 
@@ -140,7 +141,7 @@ NvmEngine::~NvmEngine() {
         size_max = std::max(size_max, map.size());
     }
     uint64_t size_avg = size_sum / BUCKET_SIZE;
-    PrintLog("fast_map_, size_max = %u\n", size_sum);
+    PrintLog("fast_map_, size_max = %u\n", size_max);
     PrintLog("fast_map_, size_avg = %u\n", size_avg);
 
     fclose(log_file_);
