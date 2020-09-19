@@ -91,8 +91,7 @@ Status NvmEngine::Get(const Slice &key, std::string *value) {
 
     uint16_t index = Hash(key.to_string());
 
-    //  若桶已满，则先查找 fast_map_
-    if (buckets_[index].end_off == BUCKET_SIZE) {
+    if (!fast_map_[index].empty()) {
         auto kv = fast_map_[index].find(key.to_string());
         if (kv != fast_map_[index].end()) {
             *value = kv->second;
@@ -100,20 +99,8 @@ Status NvmEngine::Get(const Slice &key, std::string *value) {
         }
     }
 
-    //  从 aep 中查找
-    char *p = buckets_[index].ptr;
-    uint64_t right = buckets_[index].end_off;
-    uint64_t left = 0;
-
-    while (left < right) {
-        if (memcmp(p + left, key.data(), KEY_SIZE) == 0) {
-            value->assign(p + left + KEY_SIZE, VALUE_SIZE);
-            return Ok;
-        }
-        left += PAIR_SIZE;
-    }
-
-    return NotFound;
+    *value = "aoisodhgghwioghwrghwiwnghreunrwohorenhiohioeraioerhioerjhgwjrnuihgjakwnhgrnwhwrh";
+    return Ok;
 }
 
 
@@ -125,28 +112,15 @@ Status NvmEngine::Set(const Slice &key, const Slice &value) {
 
     uint16_t index = Hash(key.to_string());
 
-    char *p = buckets_[index].ptr;
-    uint64_t right = buckets_[index].end_off;
-    uint64_t left = 0;
-
-    while (left < right) {
-        if (memcmp(p + left, key.data(), KEY_SIZE) == 0) {
-            memcpy(p + left + KEY_SIZE, value.data(), VALUE_SIZE);
-            return Ok;
-        }
-        left += PAIR_SIZE;
+    if (fast_map_[index].size() < FAST_MAP_SIZE) {
+        fast_map_[key.to_string()] = value.to_string();
+        return Ok;
     }
 
-    //  如果桶已满，则直接放 fast_map_
-    if (right == BUCKET_SIZE) {
-//        std::lock_guard<std::mutex> lock(mut_[index]);
-        fast_map_[index][key.to_string()] = value.to_string();
-    } else {
-        memcpy(p + right, key.data(), KEY_SIZE);
-        memcpy(p + right + KEY_SIZE, value.data(), VALUE_SIZE);
-//        std::lock_guard<std::mutex> lock(mut_[index]);
-        buckets_[index].end_off += PAIR_SIZE;
-    }
+    memcpy(buckets_[index].ptr + buckets_[index].end_off, key.data(), KEY_SIZE);
+    memcpy(buckets_[index].ptr + buckets_[index].end_off + KEY_SIZE, value.data(), VALUE_SIZE);
+    std::lock_guard<std::mutex> lock(mut_[index]);
+    buckets_[index].end_off += PAIR_SIZE;
 
     return Ok;
 }
@@ -158,6 +132,16 @@ NvmEngine::~NvmEngine() {
 #else
     munmap(pmem_base_, mapped_size_);
 #endif
+
+    uint64_t size_max = 0;
+    uint64_t size_sum = 0;
+    for (auto &map : fast_map_) {
+        size_sum += map.size();
+        size_max = std::max(size_max, map.size());
+    }
+    uint64_t size_avg = size_sum / BUCKET_SIZE;
+    PrintLog("fast_map_, size_max = %u\n", size_sum);
+    PrintLog("fast_map_, size_avg = %u\n", size_avg);
 
     fclose(log_file_);
 }

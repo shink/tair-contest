@@ -61,8 +61,9 @@ private:
     const static uint64_t VALUE_SIZE = 80;
     const static uint64_t PAIR_SIZE = KEY_SIZE + VALUE_SIZE;
     const static uint64_t PAIR_NUM = MAP_SIZE / PAIR_SIZE;  //  键值对数量（805306368，不是素数，805306457是素数）
-    const static uint16_t BUCKET_NUM = 4ull << 10ull;    //  1024 个桶
+    const static uint16_t BUCKET_NUM = 1ull << 10ull;    //  1024 个桶
     const static uint64_t BUCKET_SIZE = MAP_SIZE / BUCKET_NUM; //  72M（75497472）
+    const static uint16_t FAST_MAP_SIZE = 4ull << 10ull;    //  fast_map_ 的最大 size （4096）
 
     std::hash<std::string> str_hash_;
     std::mutex log_mut_;
