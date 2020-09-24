@@ -118,10 +118,10 @@ Status NvmEngine::Set(const Slice &key, const Slice &value) {
         return Ok;
     }
 
-    memcpy(buckets_[index].ptr + buckets_[index].end_off, key.data(), KEY_SIZE);
-    memcpy(buckets_[index].ptr + buckets_[index].end_off + KEY_SIZE, value.data(), VALUE_SIZE);
-    std::lock_guard<std::mutex> lock(mut_[index]);
-    buckets_[index].end_off += PAIR_SIZE;
+//    memcpy(buckets_[index].ptr + buckets_[index].end_off, key.data(), KEY_SIZE);
+//    memcpy(buckets_[index].ptr + buckets_[index].end_off + KEY_SIZE, value.data(), VALUE_SIZE);
+//    std::lock_guard<std::mutex> lock(mut_[index]);
+//    buckets_[index].end_off += PAIR_SIZE;
 
     return Ok;
 }
